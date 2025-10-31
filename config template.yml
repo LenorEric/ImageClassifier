@@ -1,40 +1,28 @@
-ftp:
-  host: "ftp.example.com"
-  port: 21
-  root_dir: "/"          # starting directory after login
-  passive_mode: true
+# Device and ADB
+device_serial: null          # null = default device; or set a specific serial string
+adb_find_cmd: "find"         # usually 'find'; keep default unless your shell differs
 
-target:
-  folder: "/dataset/cats"      # required. no interactive picker
-  ignore_dirs:                 # optional. these prefixes are skipped when scanning "other" images
-    - "/dataset/tmp"
-    - "/dataset/test"
+# Targets under /storage/emulated/0
+target_folders:              # paths relative to /storage/emulated/0, must start with '/'
+  - /UserFile/Image/gl
+  # - /DCIM/Camera
+ignore_folder_regex:         # regex patterns that match relative folder paths starting with '/'
+  - '^/Android(/.*|$)'
+  # - '^/Tencent(/.*|$)'
 
-cache:
-  dir: "./_ftp_cache"          # local cache for downloaded images
+# Local cache output
+local_root: "."              # working directory on PC
+adb_cache_dir: "_adb_cache"  # resized 224x224 images
+emb_cache_dir: "_emb_cache"  # .npy embeddings
+csv_path: "index.csv"
 
-images:
-  exts: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]  # lower-case
-  recursive: true
-  max_per_dir: 0               # 0 = no per-directory cap
+# Performance
+pull_threads: 8              # ADB pull + resize workers
+batch_size: 64               # embedding batch size
+num_workers: 4               # dataloader workers for embedding stage
+use_fp16: true               # half precision on CUDA
+device: "cuda"               # "cuda" | "cpu" | "auto"
 
-embedding:
-  device: "cuda"               # "cuda" or "cpu"
-  batch_size: 32
-  num_workers: 0               # reserved
-  topk: 10                     # avg top-K similarity vs targets
-
-review:
-  seed: 42                     # sampling RNG seed
-
-display:
-  window_name: "Similarity Review"
-  default_window_wh: [900, 1600]  # [height, width]
-  font_scale: 0.6
-  font_thick: 1
-
-log:
-  csv_path: "./move_decisions.csv"  # original_path,new_path,similarity,decision,stage,timestamp
-
-limits:
-  max_others_to_embed: 0       # 0 = no cap
+# Image handling
+max_image_pixels: null       # null disables PIL safety check; or set like 200000000
+jpeg_quality: 92             # when saving JPEG
