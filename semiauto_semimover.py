@@ -361,7 +361,7 @@ def show_and_decide(
     bottom_hint: str,
 ) -> str:
     """
-    Returns: 'move', 'skip', or 'quit'.
+    Returns: 'move', 'skip', 'back', or 'quit'.
     """
     local_path = None
     try:
@@ -370,7 +370,6 @@ def show_and_decide(
         if img is None:
             print(f"[WARN] Unable to read image: {rel_path}", file=sys.stderr)
             return 'skip'
-        # loop until decision
         while True:
             h, w = get_window_size(win)
             frame = fit_image(img, h, w)
@@ -383,9 +382,9 @@ def show_and_decide(
                 return 'skip'
             if key == 27:  # ESC
                 return 'quit'
-            # Allow window resize; redraw in next loop
+            if key == ord('f'):
+                return 'back'
     finally:
-        # remove immediately after viewing
         try:
             if local_path and Path(local_path).exists():
                 Path(local_path).unlink()
@@ -483,27 +482,39 @@ def main():
     # Stage 2: remaining items from high to low
     remaining = [(r, s) for (r, s) in scores if r not in sampled_ids]
     print(f"\nRemaining to review: {len(remaining)}")
-    for i, (rel, sim) in enumerate(remaining, 1):
-        print_idx(i, len(remaining), "remaining")
+    i = 0
+    history = []  # store skipped indices for back navigation
+
+    while 0 <= i < len(remaining):
+        rel, sim = remaining[i]
+        print_idx(i + 1, len(remaining), "remaining")
         top_hint = f"sim={sim:.4f}  threshold={threshold if not math.isnan(threshold) else 'N/A'}"
-        bottom = "Press j=move, k=skip, ESC=quit"
-        act = show_and_decide(dev, rel, sim, win, adb_cache_dir, f"{i}/{len(remaining)}", bottom)
+        bottom = "Press j=move, k=skip, f=back, ESC=quit"
+        act = show_and_decide(dev, rel, sim, win, adb_cache_dir, f"{i + 1}/{len(remaining)}", bottom)
+
         if act == 'quit':
             break
-        if act == 'move':
+        elif act == 'back':
+            if history:
+                i = history.pop()  # go back to last skipped
+                continue
+            else:
+                print("[INFO] No previous skipped image.")
+                continue
+        elif act == 'move':
             try:
                 dst_rel = adb_move_conflict_safe(dev, rel, move_target_rel_dir)
                 moved_scores.append((rel, sim, dst_rel))
                 print(f"[MOVE] {rel} -> {dst_rel}  sim={sim:.4f}")
-                try:
-                    update_csv_path(csv_path, rel, dst_rel)
-                except Exception as e:
-                    print(f"[WARN] failed to update CSV for {rel}: {e}", file=sys.stderr)
+                update_csv_path(csv_path, rel, dst_rel)
             except Exception as e:
                 print(f"[ERROR] move failed for {rel}: {e}", file=sys.stderr)
-        else:
+        else:  # skip
             ignored_scores.append((rel, sim))
+            history.append(i)  # remember skipped index for potential backtrack
             print(f"[SKIP] {rel}  sim={sim:.4f}")
+
+        i += 1
 
     cv2.destroyAllWindows()
     print("\nDone.")
