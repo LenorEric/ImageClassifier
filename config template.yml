@@ -1,43 +1,40 @@
-# FTP connection
 ftp:
   host: "ftp.example.com"
   port: 21
-  root_dir: "/"            # starting directory after login
+  root_dir: "/"          # starting directory after login
   passive_mode: true
 
-# Local cache
+target:
+  folder: "/dataset/cats"      # required. no interactive picker
+  ignore_dirs:                 # optional. these prefixes are skipped when scanning "other" images
+    - "/dataset/tmp"
+    - "/dataset/test"
+
 cache:
-  dir: "./_ftp_cache"      # where images are downloaded for embedding/view
+  dir: "./_ftp_cache"          # local cache for downloaded images
 
-# Imaging
 images:
-  exts: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]   # lower-case
-  recursive: true                                    # traverse subfolders
-  max_per_dir: 0                                     # 0 = no limit
+  exts: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]  # lower-case
+  recursive: true
+  max_per_dir: 0               # 0 = no per-directory cap
 
-# Embedding
 embedding:
-  device: "cuda"            # "cuda" or "cpu"
+  device: "cuda"               # "cuda" or "cpu"
   batch_size: 32
-  num_workers: 0            # dataloader workers; 0 is safest cross-platform
-  topk: 10                  # average top-K similarity vs target
+  num_workers: 0               # reserved
+  topk: 10                     # avg top-K similarity vs targets
 
-# Sampling for review
 review:
-  seed: 42
-  sample_per_band: 10       # 5 bands * 10 = 50 images
+  seed: 42                     # sampling RNG seed
 
-# Display
 display:
   window_name: "Similarity Review"
-  default_window_wh: [900, 1600]   # [height, width] fallback if rect not available
+  default_window_wh: [900, 1600]  # [height, width]
   font_scale: 0.6
   font_thick: 1
 
-# Logging
 log:
-  csv_path: "./move_decisions.csv" # original_path,new_path,similarity,decision,stage,timestamp
+  csv_path: "./move_decisions.csv"  # original_path,new_path,similarity,decision,stage,timestamp
 
-# Safety / limits
 limits:
-  max_others_to_embed: 0    # 0 = no limit; otherwise cap "other" images for faster trials
+  max_others_to_embed: 0       # 0 = no cap
