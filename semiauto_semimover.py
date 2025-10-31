@@ -86,6 +86,22 @@ def read_csv_rows(csv_path: Path) -> List[Tuple[str, str, str]]:
             rows.append((rel_path, cache_img, emb_path))
     return rows
 
+def update_csv_path(csv_path: Path, rel_old: str, rel_new: str):
+    """Replace the first-column path in the CSV when an image is moved."""
+    tmp_path = csv_path.with_suffix(".tmp")
+    with open(csv_path, "r", encoding="utf-8", newline="") as fin, \
+         open(tmp_path, "w", encoding="utf-8", newline="") as fout:
+        reader = csv.reader(fin)
+        writer = csv.writer(fout)
+        for i, row in enumerate(reader):
+            if i == 0 or len(row) < 1:
+                writer.writerow(row)
+                continue
+            if row[0].strip() == rel_old:
+                row[0] = rel_new
+            writer.writerow(row)
+    os.replace(tmp_path, csv_path)
+
 # ---------------- Path filters ----------------
 
 def prefix_match(path: str, prefixes: List[str]) -> bool:
@@ -183,34 +199,42 @@ def compute_scores(
 
 # ---------------- Sampling by percentile bands ----------------
 
-def stratified_sample(scores: List[Tuple[str, float]], per_band: int = 10) -> List[Tuple[str, float]]:
+def stratified_sample(scores: List[Tuple[str, float]], per_band: int = 15) -> List[Tuple[str, float]]:
     """
-    Five bands: [100,80), [80,60), [60,40), [40,20), [20,0]% of ranking.
-    Sample up to per_band from each.
+    Stratified sampling by rank percentiles (high → low).
+    Scores must be sorted descending by similarity.
+    Bands (percentile ranges of rank):
+        [95–100%), [90–95%), [80–90%), [50–80%), [0–50%)
+    Randomly sample up to `per_band` items per band.
+    Return keeps the same descending order as input.
     """
     n = len(scores)
     if n == 0:
         return []
+
+    # descending rank-based bands, expressed as fraction of total rank
     bands = [
-        (0.00, 0.20),  # top 20%
-        (0.20, 0.40),
-        (0.40, 0.60),
-        (0.60, 0.80),
-        (0.80, 1.00),
+        (0.95, 1.00),  # top 5%
+        (0.90, 0.95),  # 90–95%
+        (0.80, 0.90),  # 80–90%
+        (0.50, 0.80),  # 50–80%
+        (0.00, 0.50),  # bottom 50%
     ]
+
     out = []
     for lo, hi in bands:
-        start = int(math.floor(lo * n))
-        end = int(math.floor(hi * n))
+        # translate rank percentiles into indices
+        start = int(round((1.0 - hi) * n))      # inclusive
+        end   = int(round((1.0 - lo) * n))      # exclusive
         segment = scores[start:end]
         if not segment:
             continue
         k = min(per_band, len(segment))
         out.extend(random.sample(segment, k))
-    # Keep original descending order for presentation
-    picked = set([r for r, _ in out])
-    out_sorted = [(r, s) for (r, s) in scores if r in picked]
-    return out_sorted
+
+    # preserve input descending order
+    picked = {r for r, _ in out}
+    return [(r, s) for (r, s) in scores if r in picked]
 
 # ---------------- ADB helpers ----------------
 
@@ -266,12 +290,12 @@ def adb_move_conflict_safe(dev, src_rel: str, dst_dir_rel: str) -> str:
         dst_rel = join_rel(dst_dir_rel, candidate_name)
         dst_abs = device_path(dst_rel)
         # Test existence on device
-        code, _ = dev.shell2(f"test -e {sh_quote(dst_abs)}")
-        if code != 0:
+        res = dev.shell2(f"test -e {sh_quote(dst_abs)}")
+        if res.returncode != 0:
             # not exists, safe to move
-            code_mv, out_mv = dev.shell2(f"mv {sh_quote(src_abs)} {sh_quote(dst_abs)}")
-            if code_mv != 0:
-                raise RuntimeError(f"ADB mv failed: {out_mv}")
+            mv_res = dev.shell2(f"mv {sh_quote(src_abs)} {sh_quote(dst_abs)}")
+            if mv_res.returncode != 0:
+                raise RuntimeError(f"ADB mv failed: {mv_res.output or mv_res.stderr}")
             return dst_rel
         attempt += 1
 
@@ -374,7 +398,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", type=str, default="config.yml", help="Path to YAML config")
     ap.add_argument("--topk", type=int, default=10, help="Top-K average for scoring")
-    ap.add_argument("--per_band", type=int, default=10, help="Sample count per percentile band")
+    ap.add_argument("--per_band", type=int, default=15, help="Sample count per percentile band")
     ap.add_argument("--seed", type=int, default=123, help="Random seed for sampling")
     args = ap.parse_args()
 
@@ -434,6 +458,10 @@ def main():
                 dst_rel = adb_move_conflict_safe(dev, rel, move_target_rel_dir)
                 moved_scores.append((rel, sim, dst_rel))
                 print(f"[MOVE] {rel} -> {dst_rel}  sim={sim:.4f}")
+                try:
+                    update_csv_path(csv_path, rel, dst_rel)
+                except Exception as e:
+                    print(f"[WARN] failed to update CSV for {rel}: {e}", file=sys.stderr)
             except Exception as e:
                 print(f"[ERROR] move failed for {rel}: {e}", file=sys.stderr)
         else:
@@ -467,6 +495,10 @@ def main():
                 dst_rel = adb_move_conflict_safe(dev, rel, move_target_rel_dir)
                 moved_scores.append((rel, sim, dst_rel))
                 print(f"[MOVE] {rel} -> {dst_rel}  sim={sim:.4f}")
+                try:
+                    update_csv_path(csv_path, rel, dst_rel)
+                except Exception as e:
+                    print(f"[WARN] failed to update CSV for {rel}: {e}", file=sys.stderr)
             except Exception as e:
                 print(f"[ERROR] move failed for {rel}: {e}", file=sys.stderr)
         else:

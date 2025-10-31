@@ -138,7 +138,8 @@ def pull_and_resize_worker(dev, remote_path: str, emu_root: str,
         rel = "/" + rel
     ext = os.path.splitext(remote_path)[1].lower()
     # Build cache filename
-    safe_base = b64_path(rel)
+    digest = hashlib.sha256(rel.encode("utf-8")).digest()
+    safe_base = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")[:64]
     out_name = safe_base + ext
     out_path = adb_cache_dir / out_name
 
