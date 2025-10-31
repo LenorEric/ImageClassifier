@@ -1,0 +1,43 @@
+# FTP connection
+ftp:
+  host: "ftp.example.com"
+  port: 21
+  root_dir: "/"            # starting directory after login
+  passive_mode: true
+
+# Local cache
+cache:
+  dir: "./_ftp_cache"      # where images are downloaded for embedding/view
+
+# Imaging
+images:
+  exts: [".jpg", ".jpeg", ".png", ".bmp", ".webp"]   # lower-case
+  recursive: true                                    # traverse subfolders
+  max_per_dir: 0                                     # 0 = no limit
+
+# Embedding
+embedding:
+  device: "cuda"            # "cuda" or "cpu"
+  batch_size: 32
+  num_workers: 0            # dataloader workers; 0 is safest cross-platform
+  topk: 10                  # average top-K similarity vs target
+
+# Sampling for review
+review:
+  seed: 42
+  sample_per_band: 10       # 5 bands * 10 = 50 images
+
+# Display
+display:
+  window_name: "Similarity Review"
+  default_window_wh: [900, 1600]   # [height, width] fallback if rect not available
+  font_scale: 0.6
+  font_thick: 1
+
+# Logging
+log:
+  csv_path: "./move_decisions.csv" # original_path,new_path,similarity,decision,stage,timestamp
+
+# Safety / limits
+limits:
+  max_others_to_embed: 0    # 0 = no limit; otherwise cap "other" images for faster trials
