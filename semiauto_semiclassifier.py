@@ -573,8 +573,8 @@ def main():
             bucket = list(range(start, min(end, M)))
             if not bucket:
                 continue
-            k = min(review_cfg.sample_per_band, len(bucket))
-            sampled_indices += random.sample(bucket, k)
+            k = max(review_cfg.sample_per_band, int(round(0.1 * len(bucket))))
+            sampled_indices += random.sample(bucket, min(k, len(bucket)))
 
         sampled_indices = sorted(sampled_indices)
         # Create sampling set and remaining set
