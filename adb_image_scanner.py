@@ -8,6 +8,7 @@ import posixpath
 import hashlib
 import tempfile
 import concurrent.futures
+import threading
 from pathlib import Path
 from typing import List, Tuple, Iterable, Dict
 
@@ -22,6 +23,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import open_clip
+
+global_lock = threading.Lock()
 
 
 # ---------------------------- Config ----------------------------
@@ -70,7 +73,8 @@ def load_config(cfg_path: str) -> dict:
 def list_files_under(dev, abs_dir: str, find_cmd: str = "find") -> List[str]:
     # Use POSIX paths on device
     cmd = f"{find_cmd} {abs_dir} -type f 2>/dev/null"
-    out = dev.shell(cmd)
+    with global_lock:
+        out = dev.shell(cmd)
     files = [line.strip() for line in out.splitlines() if line.strip()]
     return files
 

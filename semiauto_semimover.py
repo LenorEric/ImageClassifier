@@ -268,7 +268,8 @@ def adb_pull_temp(dev, rel_path: str, dest_dir: Path) -> Path:
                 tmp_path.unlink()
         except Exception:
             pass
-        raise RuntimeError(f"ADB pull failed: {rel_path} ({e})")
+        if not "Cannot create a file when that file already exists" in str(e):
+            raise RuntimeError(f"ADB pull failed: {rel_path} ({e})")
 
 def adb_move_conflict_safe(dev, src_rel: str, dst_dir_rel: str) -> str:
     """

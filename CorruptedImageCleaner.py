@@ -6,6 +6,9 @@ import threading
 import concurrent.futures
 from pathlib import Path
 from adbutils import adb
+from time import sleep
+
+global_lock = threading.Lock()
 
 # ---------------- Config ----------------
 REMOTE_DIR = "/storage/emulated/0"
@@ -15,25 +18,6 @@ POOL_MULTIPLIER = 4   # number of adb instances per thread
 TMP_DIR = "_tmp_check"
 os.makedirs(TMP_DIR, exist_ok=True)
 
-
-# ---------------- Device Pool ----------------
-class DevicePool:
-    """Thread-safe pool with multiple adb instances for one phone"""
-    def __init__(self, multiplier=4):
-        devs = adb.device_list()
-        if not devs:
-            raise RuntimeError("No adb devices connected")
-        base = devs[0]
-        self.devices = [adb.device(serial=base.serial) for _ in range(MAX_WORKERS * multiplier)]
-        self.lock = threading.Lock()
-        self.index = 0
-
-    def acquire(self):
-        dev = self.devices[self.index]
-        self.index = (self.index + 1) % len(self.devices)
-        return dev
-
-
 # ---------------- Utility ----------------
 def list_remote_images(dev, remote_dir):
     """List all images except hidden and /Android"""
@@ -41,7 +25,8 @@ def list_remote_images(dev, remote_dir):
         f"find {remote_dir} -type f "
         "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \\) 2>/dev/null"
     )
-    result = dev.shell(cmd).splitlines()
+    with global_lock:
+        result = dev.shell(cmd).splitlines()
     clean = []
     for r in result:
         r = r.strip()
@@ -59,10 +44,18 @@ def is_remote_image_broken(dev, path):
     """Pull remote file temporarily and check via OpenCV"""
     tmp_path = Path(TMP_DIR) / (str(abs(hash(path))) + ".jpg")
     try:
-        dev.sync.pull(path, str(tmp_path))
+        with global_lock:
+            dev.sync.pull(path, str(tmp_path))
         img = cv2.imread(str(tmp_path))
-        ok = img is not None and img.size > 0
-    except Exception:
+        ok = True
+        if img is None:
+            ok = False
+            print(f"[DEBUG] cv2.imread returned None for {path}")
+        elif not img.size > 0:
+            ok = False
+            print(f"[DEBUG] img.size is 0 for {path}")
+    except Exception as e:
+        print(f"[DEBUG] Exception occurred while checking {path} for {e}")
         ok = False
     finally:
         if tmp_path.exists():
@@ -70,8 +63,7 @@ def is_remote_image_broken(dev, path):
     return not ok
 
 
-def worker(pool, path, results):
-    dev = pool.acquire()
+def worker(dev, path, results):
     broken = is_remote_image_broken(dev, path)
     if broken:
         results.append(path)
@@ -81,15 +73,14 @@ def worker(pool, path, results):
 
 # ---------------- Main ----------------
 def main():
-    pool = DevicePool(multiplier=POOL_MULTIPLIER)
-    print(f"[INFO] Using {len(pool.devices)} adb instances ({MAX_WORKERS} threads).")
-    dev0 = pool.acquire()
+    print(f"[INFO] Using {MAX_WORKERS} threads.")
+    dev0 = adb.device()
     paths = list_remote_images(dev0, REMOTE_DIR)
 
     broken = []
     start = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as exe:
-        futures = [exe.submit(worker, pool, p, broken) for p in paths]
+        futures = [exe.submit(worker, dev0, p, broken) for p in paths]
         for i, _ in enumerate(concurrent.futures.as_completed(futures), 1):
             sys.stdout.write(f"\rChecked {i}/{len(paths)}")
             sys.stdout.flush()
